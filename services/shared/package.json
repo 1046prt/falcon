@@ -11,7 +11,7 @@
     "test:ci": "jest --coverage --runInBand"
   },
   "dependencies": {
-    "amqplib": "^0.10.5",
+    "amqplib": "^2.0.1",
     "ioredis": "^5.4.2",
     "pg": "^8.13.1"
   },
