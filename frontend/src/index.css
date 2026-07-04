@@ -1,0 +1,92 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-primary: #09090b;
+    --bg-secondary: #18181b;
+    --bg-elevated: #27272a;
+    --accent: #3b82f6;
+    --accent-glow: rgba(59, 130, 246, 0.15);
+    --text-primary: #fafafa;
+    --text-secondary: #a1a1aa;
+    --border: rgba(255, 255, 255, 0.08);
+  }
+
+  html {
+    font-family: 'Inter', system-ui, sans-serif;
+  }
+
+  body {
+    @apply bg-[var(--bg-primary)] text-[var(--text-primary)] antialiased;
+    background-image:
+      radial-gradient(ellipse 80% 50% at 50% -20%, var(--accent-glow), transparent),
+      radial-gradient(ellipse 60% 40% at 100% 100%, rgba(59, 130, 246, 0.05), transparent);
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-zinc-900/60 backdrop-blur-xl border border-white/[0.08] rounded-2xl;
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl
+           bg-blue-600 hover:bg-blue-500 active:bg-blue-700
+           text-white font-medium text-sm
+           transition-all duration-200
+           disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-blue-600;
+  }
+
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl
+           text-zinc-400 hover:text-white hover:bg-white/[0.06]
+           font-medium text-sm transition-all duration-200;
+  }
+
+  .input-field {
+    @apply w-full bg-zinc-900/80 border border-white/[0.08] rounded-xl px-4 py-3
+           text-white placeholder-zinc-500
+           focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500/40
+           transition-all duration-200;
+  }
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes pulse-ring {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.animate-fade-in {
+  animation: fade-in 0.4s ease-out forwards;
+}
+
+.animate-pulse-ring {
+  animation: pulse-ring 2s ease-in-out infinite;
+}
+
+/* Video.js theme overrides */
+.video-js {
+  border-radius: 1rem;
+  overflow: hidden;
+}
+
+.vjs-big-play-button {
+  border-radius: 50% !important;
+  border: none !important;
+  background: rgba(59, 130, 246, 0.9) !important;
+}

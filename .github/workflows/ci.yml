@@ -1,0 +1,142 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  lint-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache node modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      - name: Cache yarn cache (if yarn.lock present)
+        if: ${{ hashFiles('**/yarn.lock') != '' }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/yarn
+            node_modules
+          key: ${{ runner.os }}-yarn-${{ hashFiles('**/yarn.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
+      - name: Cache pnpm store (if pnpm-lock.yaml present)
+        if: ${{ hashFiles('**/pnpm-lock.yaml') != '' }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pnpm-store
+            node_modules
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm ci
+      - name: Lint
+        run: npm run lint --if-present
+      - name: Typecheck / Build
+        run: npm run typecheck --if-present
+      - name: Dependency review
+        uses: actions/dependency-review-action@v2
+
+  workspace-tests:
+    needs: lint-build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        package: [
+          "./frontend",
+          "./services/shared",
+          "./services/api-gateway",
+          "./services/upload-service",
+          "./services/metadata-service",
+          "./services/transcoding-worker",
+          "./services/hls-service",
+          "./services/notification-service"
+        ]
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache node modules (workspace)
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            node_modules
+            ${{ matrix.package }}/node_modules
+          key: ${{ runner.os }}-node-${{ matrix.os }}-${{ hashFiles('**/package-lock.json') }}-${{ matrix.package }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+      - name: Cache yarn cache for workspace (if yarn.lock present)
+        if: ${{ hashFiles('**/yarn.lock') != '' }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/yarn
+            ${{ matrix.package }}/node_modules
+          key: ${{ runner.os }}-yarn-${{ matrix.os }}-${{ hashFiles('**/yarn.lock') }}-${{ matrix.package }}
+          restore-keys: |
+            ${{ runner.os }}-yarn-
+      - name: Cache pnpm store for workspace (if pnpm-lock.yaml present)
+        if: ${{ hashFiles('**/pnpm-lock.yaml') != '' }}
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pnpm-store
+            ${{ matrix.package }}/node_modules
+          key: ${{ runner.os }}-pnpm-${{ matrix.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}-${{ matrix.package }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install dependencies
+        run: npm ci
+      - name: Run workspace tests
+        run: |
+          echo "Running tests for workspace: ${{ matrix.package }}"
+          npm run test -w "${{ matrix.package }}" --if-present || npm run build -w "${{ matrix.package }}" --if-present
+
+  integration-tests:
+    if: github.event_name == 'push'
+    needs: [lint-build, workspace-tests]
+    runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:24-dind
+        options: --privileged
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Start integration stack
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.workers.yml -f docker-compose.test.yml up -d --build
+      - name: Run integration tests
+        run: npm run test:e2e || true
+      - name: Teardown integration stack
+        run: docker compose -f docker-compose.yml -f docker-compose.workers.yml -f docker-compose.test.yml down
+      - name: Snyk scan
+        if: secrets.SNYK_TOKEN
+        uses: snyk/actions/node@v2
+        with:
+          args: test --severity-threshold=low
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}

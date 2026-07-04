@@ -1,0 +1,23 @@
+{
+  "name": "@falcon/shared",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "jest --coverage",
+    "test:ci": "jest --coverage --runInBand"
+  },
+  "dependencies": {
+    "amqplib": "^0.10.5",
+    "ioredis": "^5.4.2",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/amqplib": "^0.10.6",
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10"
+  }
+}

@@ -1,0 +1,34 @@
+# FFmpeg workers — connect to host services via host.docker.internal
+# Usage: docker compose -f docker-compose.yml -f docker-compose.workers.yml up -d --build
+
+services:
+  transcoding-worker:
+    build:
+      context: .
+      dockerfile: services/transcoding-worker/Dockerfile
+    container_name: falcon-transcoding-worker
+    environment:
+      RABBITMQ_URL: amqp://falcon:falcon_secret@host.docker.internal:5672
+      REDIS_URL: redis://host.docker.internal:6379
+      S3_ENDPOINT: http://host.docker.internal:9000
+      METADATA_SERVICE_URL: http://host.docker.internal:3002
+      WORKER_ID: docker-worker-1
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+
+  hls-worker:
+    build:
+      context: .
+      dockerfile: services/hls-service/Dockerfile
+    container_name: falcon-hls-worker
+    environment:
+      RABBITMQ_URL: amqp://falcon:falcon_secret@host.docker.internal:5672
+      REDIS_URL: redis://host.docker.internal:6379
+      S3_ENDPOINT: http://host.docker.internal:9000
+      S3_PUBLIC_ENDPOINT: http://localhost:9000
+      METADATA_SERVICE_URL: http://host.docker.internal:3002
+      HLS_SERVICE_PORT: "3013"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

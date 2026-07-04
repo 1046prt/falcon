@@ -1,0 +1,128 @@
+services:
+  api-gateway:
+    build:
+      context: ..
+      dockerfile: services/api-gateway/Dockerfile
+    container_name: falcon-api-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      CORS_ORIGIN: http://localhost:5173
+      UPLOAD_SERVICE_URL: http://upload-service:3011
+      METADATA_SERVICE_URL: http://metadata-service:3002
+      HLS_SERVICE_URL: http://hls-service:3003
+      NOTIFICATION_SERVICE_URL: http://notification-service:3004
+    depends_on:
+      upload-service:
+        condition: service_started
+      metadata-service:
+        condition: service_started
+    restart: unless-stopped
+
+  upload-service:
+    build:
+      context: ..
+      dockerfile: services/upload-service/Dockerfile
+    container_name: falcon-upload-service
+    ports:
+      - "3011:3011"
+    environment:
+      UPLOAD_SERVICE_PORT: 3011
+      DATABASE_URL: postgresql://falcon:falcon_secret@postgres:5432/falcon
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: amqp://falcon:falcon_secret@rabbitmq:5672
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_ENDPOINT: http://localhost:9000
+      METADATA_SERVICE_URL: http://metadata-service:3002
+    depends_on:
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  metadata-service:
+    build:
+      context: ..
+      dockerfile: services/metadata-service/Dockerfile
+    container_name: falcon-metadata-service
+    ports:
+      - "3002:3002"
+    environment:
+      DATABASE_URL: postgresql://falcon:falcon_secret@postgres:5432/falcon
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  transcoding-worker:
+    build:
+      context: ..
+      dockerfile: services/transcoding-worker/Dockerfile
+    ports:
+      - "3005:3005"
+    environment:
+      RABBITMQ_URL: amqp://falcon:falcon_secret@rabbitmq:5672
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      METADATA_SERVICE_URL: http://metadata-service:3002
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    deploy:
+      replicas: 2
+    restart: unless-stopped
+
+  hls-service:
+    build:
+      context: ..
+      dockerfile: services/hls-service/Dockerfile
+    container_name: falcon-hls-service
+    ports:
+      - "3003:3003"
+    environment:
+      RABBITMQ_URL: amqp://falcon:falcon_secret@rabbitmq:5672
+      REDIS_URL: redis://redis:6379
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_ENDPOINT: http://localhost:9000
+      METADATA_SERVICE_URL: http://metadata-service:3002
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  notification-service:
+    build:
+      context: ..
+      dockerfile: services/notification-service/Dockerfile
+    container_name: falcon-notification-service
+    ports:
+      - "3004:3004"
+    environment:
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: falcon-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - api-gateway
+    restart: unless-stopped
