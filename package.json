@@ -45,7 +45,7 @@
     "@types/jest": "^29.5.3",
     "jest-environment-node": "^29.7.0",
     "typescript": "^5.7.2",
-    "tsx": "^4.19.2",
+    "tsx": "^4.23.0",
     "ts-node": "^10.9.1"
   },
   "engines": {
