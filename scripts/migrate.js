@@ -4,7 +4,10 @@ const path = require('path');
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
-  'postgresql://falcon:falcon_secret@localhost:5432/falcon';
+  (() => {
+    console.warn('WARNING: DATABASE_URL not set, using dev default');
+    return 'postgresql://falcon:falcon_dev@localhost:5432/falcon';
+  })();
 
 async function migrate() {
   const client = new Client({ connectionString: DATABASE_URL });

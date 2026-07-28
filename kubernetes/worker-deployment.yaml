@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: falcon-transcoding-worker
+  namespace: falcon
   labels:
     app: falcon-transcoding-worker
 spec:
@@ -25,6 +26,31 @@ spec:
                 secretKeyRef:
                   name: falcon-secrets
                   key: rabbitmq-url
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: falcon-secrets
+                  key: jwt-secret
+            - name: INTERNAL_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: falcon-secrets
+                  key: internal-api-key
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: falcon-secrets
+                  key: s3-access-key
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: falcon-secrets
+                  key: s3-secret-key
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: falcon-secrets
+                  key: database-url
             - name: S3_ENDPOINT
               value: "https://s3.amazonaws.com"
           resources:
@@ -53,6 +79,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: falcon-worker-hpa
+  namespace: falcon
 spec:
   scaleTargetRef:
     apiVersion: apps/v1

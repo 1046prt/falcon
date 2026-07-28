@@ -28,9 +28,9 @@ services:
       - "3011:3011"
     environment:
       UPLOAD_SERVICE_PORT: 3011
-      DATABASE_URL: postgresql://falcon:falcon_secret@postgres:5432/falcon
+      DATABASE_URL: ${DATABASE_URL:-postgresql://falcon:falcon_dev@postgres:5432/falcon}
       REDIS_URL: redis://redis:6379
-      RABBITMQ_URL: amqp://falcon:falcon_secret@rabbitmq:5672
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://falcon:falcon_dev@rabbitmq:5672}
       S3_ENDPOINT: http://minio:9000
       S3_PUBLIC_ENDPOINT: http://localhost:9000
       METADATA_SERVICE_URL: http://metadata-service:3002
@@ -51,7 +51,7 @@ services:
     ports:
       - "3002:3002"
     environment:
-      DATABASE_URL: postgresql://falcon:falcon_secret@postgres:5432/falcon
+      DATABASE_URL: ${DATABASE_URL:-postgresql://falcon:falcon_dev@postgres:5432/falcon}
       REDIS_URL: redis://redis:6379
     depends_on:
       postgres:
@@ -67,7 +67,7 @@ services:
     ports:
       - "3005:3005"
     environment:
-      RABBITMQ_URL: amqp://falcon:falcon_secret@rabbitmq:5672
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://falcon:falcon_dev@rabbitmq:5672}
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://minio:9000
       METADATA_SERVICE_URL: http://metadata-service:3002
@@ -90,7 +90,7 @@ services:
     ports:
       - "3003:3003"
     environment:
-      RABBITMQ_URL: amqp://falcon:falcon_secret@rabbitmq:5672
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://falcon:falcon_dev@rabbitmq:5672}
       REDIS_URL: redis://redis:6379
       S3_ENDPOINT: http://minio:9000
       S3_PUBLIC_ENDPOINT: http://localhost:9000

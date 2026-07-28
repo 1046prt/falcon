@@ -1,7 +1,6 @@
 import {
   CompleteMultipartUploadCommand,
   CreateMultipartUploadCommand,
-  S3Client,
   UploadPartCommand,
 } from '@aws-sdk/client-s3';
 import cors from 'cors';
@@ -11,6 +10,7 @@ import { v4 as uuidv4 } from 'uuid';
 import {
   config,
   createLogger,
+  createS3Client,
   deleteUploadSession,
   getUploadSession,
   publishMessage,
@@ -18,6 +18,7 @@ import {
   saveUploadSession,
   setProcessingProgress,
   updateUploadSession,
+  CACHE_CONTROL_MP4,
 } from '@falcon/shared';
 import type { TranscodingMessage } from '@falcon/shared';
 
@@ -26,15 +27,7 @@ const app = express();
 const PORT = Number(process.env.UPLOAD_SERVICE_PORT) || 3011;
 const METADATA_URL = process.env.METADATA_SERVICE_URL || 'http://localhost:3002';
 
-const s3 = new S3Client({
-  endpoint: config.s3.endpoint,
-  region: config.s3.region,
-  credentials: {
-    accessKeyId: config.s3.accessKey,
-    secretAccessKey: config.s3.secretKey,
-  },
-  forcePathStyle: true,
-});
+const s3 = createS3Client();
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -50,7 +43,8 @@ app.get('/health', (_req, res) => {
 
 app.post('/init', async (req, res) => {
   try {
-    const { title, description, fileName, fileSize, chunkSize, totalChunks, userId } = req.body;
+    const { title, description, fileName, fileSize, chunkSize, totalChunks } = req.body;
+    const userId = req.headers['x-user-id'] as string;
 
     if (!title || !fileName || !fileSize || !totalChunks) {
       res.status(400).json({ error: 'Missing required fields: title, fileName, fileSize, totalChunks' });
@@ -66,6 +60,7 @@ app.post('/init', async (req, res) => {
         Bucket: config.s3.rawBucket,
         Key: key,
         ContentType: 'video/mp4',
+        CacheControl: CACHE_CONTROL_MP4,
       })
     );
 
@@ -208,9 +203,17 @@ app.post('/complete', async (req, res) => {
       })
     );
 
+    const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (req.headers['x-user-id']) {
+      authHeaders['x-user-id'] = req.headers['x-user-id'] as string;
+    }
+    if (req.headers.authorization) {
+      authHeaders['authorization'] = req.headers.authorization as string;
+    }
+
     const videoResponse = await fetch(`${METADATA_URL}/videos`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: authHeaders,
       body: JSON.stringify({
         id: session.videoId,
         title: session.title,
@@ -240,7 +243,7 @@ app.post('/complete', async (req, res) => {
 
       await fetch(`${METADATA_URL}/jobs`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({ id: jobId, videoId: session.videoId, resolution }),
       }).catch(() => undefined);
 

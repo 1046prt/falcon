@@ -8,7 +8,9 @@ if (!videoId) {
 }
 
 async function main() {
-  const conn = await amqp.connect(process.env.RABBITMQ_URL || 'amqp://falcon:falcon_secret@localhost:5672');
+  const url = process.env.RABBITMQ_URL;
+  if (!url) console.warn('WARNING: RABBITMQ_URL not set, using dev default');
+  const conn = await amqp.connect(url || 'amqp://falcon:falcon_dev@localhost:5672');
   const ch = await conn.createChannel();
   const message = { videoId, resolutions: ['1080p', '720p', '480p'] };
   ch.sendToQueue('falcon.hls', Buffer.from(JSON.stringify(message)), { persistent: true });

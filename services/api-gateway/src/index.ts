@@ -2,8 +2,9 @@ import cors from 'cors';
 import express from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
+import jwt from 'jsonwebtoken';
 import { createProxyMiddleware } from 'http-proxy-middleware';
-import { createLogger } from '@falcon/shared';
+import { config, createLogger } from '@falcon/shared';
 
 const logger = createLogger('api-gateway');
 const app = express();
@@ -16,7 +17,12 @@ const NOTIFICATION_SERVICE = process.env.NOTIFICATION_SERVICE_URL || 'http://loc
 
 const corsOrigin = process.env.CORS_ORIGIN || 'http://localhost:5173';
 
-/** Express strips the mount prefix — rewrite the remaining path for upstream services */
+const publicPaths = [
+  '/health',
+  '/api/users/login',
+  '/api/users/register',
+];
+
 function rewritePath(basePath: string) {
   return (path: string) => {
     const suffix = path === '/' ? '' : path;
@@ -46,8 +52,37 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'api-gateway', timestamp: new Date().toISOString() });
 });
 
+app.use((req, res, next) => {
+  if (publicPaths.some(p => req.path === p)) {
+    return next();
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.status(401).json({ error: 'Authentication required' });
+    return;
+  }
+
+  try {
+    const token = authHeader.slice(7);
+    const payload = jwt.verify(token, config.jwt.secret) as { userId: string; email: string };
+    req.headers['x-user-id'] = payload.userId;
+    req.headers['x-user-email'] = payload.email;
+    next();
+  } catch {
+    res.status(401).json({ error: 'Invalid or expired token' });
+  }
+});
+
 app.use(
   '/api/upload',
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 100,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Upload rate limit exceeded' },
+  }),
   createProxyMiddleware({
     target: UPLOAD_SERVICE,
     changeOrigin: true,

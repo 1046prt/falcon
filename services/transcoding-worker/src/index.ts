@@ -1,4 +1,4 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { createWriteStream, existsSync, mkdirSync, rmSync } from 'fs';
 import { pipeline } from 'stream/promises';
 import express from 'express';
@@ -10,11 +10,13 @@ import {
   config,
   consumeMessages,
   createLogger,
+  createS3Client,
   markHlsGenerating,
   publishMessage,
   rabbitConfig,
   tryAcquireHlsLock,
   updateResolutionComplete,
+  CACHE_CONTROL_MP4,
 } from '@falcon/shared';
 import type { HlsMessage, TranscodingMessage } from '@falcon/shared';
 
@@ -23,15 +25,7 @@ const WORKER_ID = process.env.WORKER_ID || `worker-${uuidv4().slice(0, 8)}`;
 const PORT = Number(process.env.WORKER_PORT) || 3005;
 const METADATA_URL = process.env.METADATA_SERVICE_URL || 'http://localhost:3002';
 
-const s3 = new S3Client({
-  endpoint: config.s3.endpoint,
-  region: config.s3.region,
-  credentials: {
-    accessKeyId: config.s3.accessKey,
-    secretAccessKey: config.s3.secretKey,
-  },
-  forcePathStyle: true,
-});
+const s3 = createS3Client();
 
 const RESOLUTION_SETTINGS: Record<string, { width: number; height: number; bitrate: string }> = {
   '1080p': { width: 1920, height: 1080, bitrate: '5000k' },
@@ -50,14 +44,15 @@ async function downloadFromS3(key: string, localPath: string): Promise<void> {
 
 async function uploadToS3(localPath: string, key: string): Promise<void> {
   const { readFileSync } = await import('fs');
-  await s3.send(
-    new PutObjectCommand({
-      Bucket: config.s3.processedBucket,
-      Key: key,
-      Body: readFileSync(localPath),
-      ContentType: 'video/mp4',
-    })
-  );
+    await s3.send(
+      new PutObjectCommand({
+        Bucket: config.s3.processedBucket,
+        Key: key,
+        Body: readFileSync(localPath),
+        ContentType: 'video/mp4',
+        CacheControl: CACHE_CONTROL_MP4,
+      })
+    );
 }
 
 function transcodeVideo(inputPath: string, outputPath: string, resolution: string): Promise<void> {
@@ -67,7 +62,7 @@ function transcodeVideo(inputPath: string, outputPath: string, resolution: strin
   }
 
   return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
+    const command = ffmpeg(inputPath)
       .outputOptions([
         `-vf scale=${settings.width}:${settings.height}`,
         `-b:v ${settings.bitrate}`,
@@ -77,9 +72,22 @@ function transcodeVideo(inputPath: string, outputPath: string, resolution: strin
         '-b:a 128k',
         '-movflags +faststart',
       ])
-      .output(outputPath)
-      .on('end', () => resolve())
-      .on('error', (err) => reject(err))
+      .output(outputPath);
+
+    const timeout = setTimeout(() => {
+      command.kill('SIGKILL');
+      reject(new Error(`Transcode timed out after ${config.jobTimeoutMs}ms`));
+    }, config.jobTimeoutMs);
+
+    command
+      .on('end', () => {
+        clearTimeout(timeout);
+        resolve();
+      })
+      .on('error', (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      })
       .run();
   });
 }
@@ -91,7 +99,7 @@ async function updateJobStatus(
 ): Promise<void> {
   await fetch(`${METADATA_URL}/jobs/${jobId}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-internal-api-key': config.internalApiKey },
     body: JSON.stringify({ status, workerId: WORKER_ID, ...extra }),
   }).catch(() => undefined);
 }

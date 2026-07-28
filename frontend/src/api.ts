@@ -1,7 +1,22 @@
 const API_URL = import.meta.env.VITE_API_URL || '';
 
+function getToken(): string | null {
+  return localStorage.getItem('falcon_token');
+}
+
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_URL}${path}`, options);
+  const res = await fetch(`${API_URL}${path}`, {
+    ...options,
+    headers: {
+      ...options?.headers,
+      ...authHeaders(),
+    },
+  });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || `Request failed: ${res.status}`);

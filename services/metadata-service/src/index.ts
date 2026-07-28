@@ -15,6 +15,42 @@ const pool = new Pool({ connectionString: config.database.url });
 app.use(cors());
 app.use(express.json());
 
+const publicPaths = ['/health', '/users/register', '/users/login'];
+
+const internalApiKey = config.internalApiKey;
+
+function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  if (publicPaths.some(p => req.path === p)) {
+    return next();
+  }
+
+  if (req.headers['x-internal-api-key'] === internalApiKey) {
+    return next();
+  }
+
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    try {
+      const token = authHeader.slice(7);
+      const payload = jwt.verify(token, config.jwt.secret) as { userId: string; email: string };
+      (req as any).user = payload;
+      return next();
+    } catch {
+      // fall through to check gateway header
+    }
+  }
+
+  const userId = req.headers['x-user-id'] as string | undefined;
+  if (userId) {
+    (req as any).user = { userId };
+    return next();
+  }
+
+  res.status(401).json({ error: 'Authentication required' });
+}
+
+app.use(requireAuth);
+
 app.get('/health', async (_req, res) => {
   try {
     await pool.query('SELECT 1');
@@ -90,7 +126,8 @@ app.post('/users/login', async (req, res) => {
 
 app.post('/videos', async (req, res) => {
   try {
-    const { id, userId, title, description, originalKey, status } = req.body;
+    const { id, title, description, originalKey, status } = req.body;
+    const userId = (req as any).user.userId;
 
     if (!title) {
       res.status(400).json({ error: 'Title is required' });
@@ -109,7 +146,7 @@ app.post('/videos', async (req, res) => {
          original_key = EXCLUDED.original_key,
          updated_at = NOW()
        RETURNING *`,
-      [videoId, userId || null, title, description, status || 'UPLOADED', originalKey]
+      [videoId, userId, title, description, status || 'UPLOADED', originalKey]
     );
 
     res.status(201).json(result.rows[0]);
@@ -121,23 +158,19 @@ app.post('/videos', async (req, res) => {
 
 app.get('/videos', async (req, res) => {
   try {
-    const { userId, status } = req.query;
+    const userId = (req as any).user.userId;
+    const { status } = req.query;
     let query = 'SELECT * FROM videos';
     const params: string[] = [];
-    const conditions: string[] = [];
+    const conditions: string[] = [`user_id = $${params.length + 1}`];
+    params.push(userId);
 
-    if (userId) {
-      conditions.push(`user_id = $${params.length + 1}`);
-      params.push(userId as string);
-    }
     if (status) {
       conditions.push(`status = $${params.length + 1}`);
       params.push(status as string);
     }
 
-    if (conditions.length > 0) {
-      query += ' WHERE ' + conditions.join(' AND ');
-    }
+    query += ' WHERE ' + conditions.join(' AND ');
     query += ' ORDER BY created_at DESC';
 
     const result = await pool.query(query, params);
@@ -150,7 +183,8 @@ app.get('/videos', async (req, res) => {
 
 app.get('/videos/:id', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM videos WHERE id = $1', [req.params.id]);
+    const userId = (req as any).user.userId;
+    const result = await pool.query('SELECT * FROM videos WHERE id = $1 AND user_id = $2', [req.params.id, userId]);
     const progress = await getProcessingProgress(req.params.id);
 
     if (result.rows.length === 0) {

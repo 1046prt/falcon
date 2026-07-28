@@ -1,4 +1,4 @@
-import { GetObjectCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import cors from 'cors';
 import express from 'express';
 import ffmpeg from 'fluent-ffmpeg';
@@ -10,8 +10,13 @@ import {
   config,
   consumeMessages,
   createLogger,
+  createS3Client,
+  getPresignedUrl,
+  buildCdnUrl,
   markCompleted,
   rabbitConfig,
+  CACHE_CONTROL_HLS,
+  CACHE_CONTROL_MANIFEST,
 } from '@falcon/shared';
 import type { HlsMessage } from '@falcon/shared';
 
@@ -19,15 +24,7 @@ const logger = createLogger('hls-service');
 const app = express();
 const PORT = process.env.HLS_SERVICE_PORT || 3003;
 
-const s3 = new S3Client({
-  endpoint: config.s3.endpoint,
-  region: config.s3.region,
-  credentials: {
-    accessKeyId: config.s3.accessKey,
-    secretAccessKey: config.s3.secretKey,
-  },
-  forcePathStyle: true,
-});
+const s3 = createS3Client();
 
 const METADATA_URL = process.env.METADATA_SERVICE_URL || 'http://localhost:3002';
 const workDir = path.join(os.tmpdir(), 'falcon-hls');
@@ -73,19 +70,21 @@ async function downloadFromS3(key: string, localPath: string): Promise<void> {
 }
 
 async function uploadFileToS3(localPath: string, key: string, contentType: string): Promise<void> {
+  const cacheControl = contentType === 'application/vnd.apple.mpegurl' ? CACHE_CONTROL_MANIFEST : CACHE_CONTROL_HLS;
   await s3.send(
     new PutObjectCommand({
       Bucket: config.s3.processedBucket,
       Key: key,
       Body: readFileSync(localPath),
       ContentType: contentType,
+      CacheControl: cacheControl,
     })
   );
 }
 
 function generateHlsSegments(inputPath: string, outputDir: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    ffmpeg(inputPath)
+    const command = ffmpeg(inputPath)
       .outputOptions([
         '-c:v libx264',
         '-c:a aac',
@@ -95,9 +94,22 @@ function generateHlsSegments(inputPath: string, outputDir: string): Promise<void
         path.join(outputDir, 'segment_%03d.ts'),
         '-f hls',
       ])
-      .output(path.join(outputDir, 'playlist.m3u8'))
-      .on('end', () => resolve())
-      .on('error', (err) => reject(err))
+      .output(path.join(outputDir, 'playlist.m3u8'));
+
+    const timeout = setTimeout(() => {
+      command.kill('SIGKILL');
+      reject(new Error(`HLS generation timed out after ${config.jobTimeoutMs}ms`));
+    }, config.jobTimeoutMs);
+
+    command
+      .on('end', () => {
+        clearTimeout(timeout);
+        resolve();
+      })
+      .on('error', (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      })
       .run();
   });
 }
@@ -156,12 +168,18 @@ async function processHlsJob(message: HlsMessage): Promise<void> {
       'application/vnd.apple.mpegurl'
     );
 
-    const publicEndpoint = process.env.S3_PUBLIC_ENDPOINT || config.s3.endpoint;
-    const hlsMasterUrl = `${publicEndpoint}/${config.s3.processedBucket}/processed/${videoId}/hls/master.m3u8`;
+    const masterKey = `processed/${videoId}/hls/master.m3u8`;
+    let hlsMasterUrl: string;
+
+    if (config.cdn.signedUrlEnabled) {
+      hlsMasterUrl = await getPresignedUrl(s3, config.s3.processedBucket, masterKey);
+    } else {
+      hlsMasterUrl = buildCdnUrl(masterKey);
+    }
 
     await fetch(`${METADATA_URL}/videos/${videoId}/status`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'x-internal-api-key': config.internalApiKey },
       body: JSON.stringify({ status: 'COMPLETED', hlsMasterUrl }),
     });
 

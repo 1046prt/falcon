@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: falcon-api-gateway
+  namespace: falcon
 spec:
   replicas: 2
   selector:
@@ -48,6 +49,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: falcon-api-gateway
+  namespace: falcon
 spec:
   selector:
     app: falcon-api-gateway

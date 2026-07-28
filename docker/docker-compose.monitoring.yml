@@ -16,7 +16,7 @@ services:
     volumes:
       - ../monitoring/grafana/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: falcon_secret
+      GF_SECURITY_ADMIN_PASSWORD: ${FALCON_GRAFANA_PASSWORD:-falcon_dev}
     depends_on:
       - prometheus
     restart: unless-stopped
