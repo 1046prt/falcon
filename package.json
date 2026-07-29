@@ -33,7 +33,7 @@
     "setup": "node scripts/setup.js"
   },
   "devDependencies": {
-    "@typescript-eslint/eslint-plugin": "^8.18.2",
+    "@typescript-eslint/eslint-plugin": "^8.65.0",
     "@typescript-eslint/parser": "^8.18.2",
     "concurrently": "^9.1.2",
     "eslint": "^9.17.0",
